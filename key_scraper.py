@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, NewType
 import requests
 import datetime
 import asyncio
@@ -7,33 +7,13 @@ import time
 import logging
 import re
 
+from scraper_base import *
 from session import GSession
 
-pattern_exc_firm_code = re.compile(r'\[(\d+)\]')
-
-class ResponseError(Exception):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args)
-        self.org_code = kwargs.get('org_code')
-
-    def __str__(self):
-        s = super().__str__()
-        return '[{}]{}'.format(self.org_code, s)
+TSession = NewType('Session', object)
 
 
-class ProcessingError(Exception):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args)
-        self.org_code = kwargs.get('org_code')
-
-    def __str__(self):
-        s = super().__str__()
-        return '[{}]{}'.format(self.org_code, s)
-
-
-class Scraper(object):
+class Scraper(BaseScraper):
 
     ENTRY_URL = 'http://uakey.com.ua/ua/setificate-one-office/text=3&page=1?lang=ukr#blocy'
     REQUEST_URL = 'http://uakey.com.ua/inc/sertificate_from_edrpo.php'
@@ -55,7 +35,7 @@ class Scraper(object):
         self.raise_exceptions = raise_exceptions
         self.logger = logging.getLogger('key_scraper')
 
-    def find_one(self, org_code: str):
+    def find_one(self, org_code: str) -> dict:
         code_length = len(org_code)
         assert code_length == 8 or code_length == 10, \
             'Organization code should be 8 or 10 chars, instead got {}'.format(code_length)
@@ -82,7 +62,7 @@ class Scraper(object):
         else:
             raise ResponseError(' -> Request on {} failed'.format(self.REQUEST_URL), org_code=org_code)
 
-    def find_bulk(self, org_codes: Iterable):
+    def find_bulk(self, org_codes: Iterable) -> list:
         assert hasattr(org_codes, '__iter__'), 'Container for org_codes should be iterable'
 
         results = []
@@ -110,7 +90,7 @@ class Scraper(object):
 
         return results
 
-    async def _run_bulk(self, org_codes):
+    async def _run_bulk(self, org_codes: list) -> list:
         session = GSession(headers=self.HEADERS)
         semaphore = asyncio.Semaphore(self.coros_limit)
 
@@ -126,12 +106,12 @@ class Scraper(object):
         session.close()
         return result
 
-    async def _get_ssid(self, session, org_code):
+    async def _get_ssid(self, session: TSession, org_code: str) -> str:
         response = await session.post(self.ENTRY_URL, data={'ORGEDRPOUNUMBER': org_code})
         ssid = response.cookies.get('PHPSESSID')
         return ssid.value
 
-    async def _get_data(self, org_code, ssid, session, semaphore):
+    async def _get_data(self, org_code: str, ssid: str, session: TSession, semaphore):
         epoch_time = int(time.time())
         req_params = {'PHPSESSID': ssid, 'JsHttpRequest': '{}{}'.format(epoch_time, '0-xml')}
         req_data = {'SertEdrpo': org_code}

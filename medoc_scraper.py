@@ -1,40 +1,17 @@
-from typing import Iterable
-import requests
-from collections import defaultdict
-import datetime
 import asyncio
+import datetime
+from collections import defaultdict
 import json
 import logging
 import re
+import requests
+from typing import Iterable
 
+from scraper_base import *
 from session import GSession
 
-pattern_exc_firm_code = re.compile(r'\[(\d+)\]')
 
-
-class ResponseError(Exception):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args)
-        self.org_code = kwargs.get('org_code')
-
-    def __str__(self):
-        s = super().__str__()
-        return '[{}]{}'.format(self.org_code, s)
-
-
-class ProcessingError(Exception):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args)
-        self.org_code = kwargs.get('org_code')
-
-    def __str__(self):
-        s = super().__str__()
-        return '[{}]{}'.format(self.org_code, s)
-
-
-class Scraper(object):
+class Scraper(BaseScraper):
 
     BASE_URL = 'https://api.medoc.ua/lic/key_medoc_test.php'
     LIC_TYPES = defaultdict(lambda : 'Unknown')
