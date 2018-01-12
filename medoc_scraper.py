@@ -4,16 +4,34 @@ from collections import defaultdict
 import datetime
 import asyncio
 import json
+import logging
+import re
 
 from session import GSession
 
+pattern_exc_firm_code = re.compile(r'\[(\d+)\]')
+
 
 class ResponseError(Exception):
-    pass
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        self.org_code = kwargs.get('org_code')
+
+    def __str__(self):
+        s = super().__str__()
+        return '[{}]{}'.format(self.org_code, s)
 
 
 class ProcessingError(Exception):
-    pass
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args)
+        self.org_code = kwargs.get('org_code')
+
+    def __str__(self):
+        s = super().__str__()
+        return '[{}]{}'.format(self.org_code, s)
 
 
 class Scraper(object):
@@ -21,29 +39,30 @@ class Scraper(object):
     BASE_URL = 'https://api.medoc.ua/lic/key_medoc_test.php'
     LIC_TYPES = defaultdict(lambda : 'Unknown')
     LIC_TYPES.update({'12': 'Local', '13': 'Network'})
+    HEADERS = {'User-Agent': 'medoc1001208', 'Host': 'api.medoc.ua'}
 
     def __init__(self, coros_limit=100, r_timeout=5, raise_exceptions=True):
         self.r_timeout = r_timeout
         self.coros_limit = coros_limit
         self.raise_exceptions = raise_exceptions
+        self.logger = logging.getLogger('medoc_scraper')
 
     def find_one(self, org_code: str):
-        # TODO: add headers
         code_length = len(org_code)
         assert code_length == 8 or code_length == 10, \
             'Organization code should be 8 or 10 chars, instead got {}'.format(code_length)
 
         req_params = {'edrpo': org_code, 'type': 'json'}
 
-        resp = requests.get(self.BASE_URL, params=req_params)
+        resp = requests.get(self.BASE_URL, headers=self.HEADERS, params=req_params)
 
         if resp.status_code == 200:
             data = resp.json()
-            result = self._process(data)
+            result = self._process(data, org_code)
             result['org_code'] = org_code
             return result
         else:
-            raise ResponseError
+            raise ResponseError(' -> Request on {} failed'.format(self.BASE_URL), org_code=org_code)
 
     def find_bulk(self, org_codes: Iterable):
         assert hasattr(org_codes, '__iter__'), 'Container for org_codes should be iterable'
@@ -58,16 +77,23 @@ class Scraper(object):
         loop.close()
 
         for item in results_raw:
-            for org_code, data_raw in item.items():
-                data = self._process(data_raw)
-                data['org_code'] = org_code
-                results.append(data)
+            # hack to obtain org_code from failed request
+            if isinstance(item, Exception):
+                self.logger.error(item)
+                firm_code_group = re.search(pattern_exc_firm_code, str(item))
+                if firm_code_group.group():
+                    data = {'org_code': firm_code_group.group(1), 'status': -1}
+                    results.append(data)
+            else:
+                for org_code, data_raw in item.items():
+                    data = self._process(data_raw, org_code)
+                    data['org_code'] = org_code
+                    results.append(data)
 
         return results
 
     async def _run_bulk(self, org_codes):
-        # TODO: add headers
-        session = GSession()
+        session = GSession(headers=self.HEADERS)
         semaphore = asyncio.Semaphore(self.coros_limit)
 
         tasks, result = [], []
@@ -84,13 +110,17 @@ class Scraper(object):
         data = {org_code: []}
         req_params = {'edrpo': org_code, 'type': 'json'}
 
-        response = await session.get(self.BASE_URL, params=req_params, semaphore=semaphore, timeout=self.r_timeout)
+        try:
+            response = await session.get(self.BASE_URL, params=req_params, semaphore=semaphore, timeout=self.r_timeout)
+        except Exception as err:
+            raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.BASE_URL, err), org_code=org_code)
+
         if response.content:
             data_raw = json.loads(response.content)
             data = {org_code: data_raw}
         return data
 
-    def _process(self, data):
+    def _process(self, data, org_code=None):
 
         result = {'status': -1, 'lics': {}}
 
@@ -116,17 +146,11 @@ class Scraper(object):
                     else:
                         if result['lics'][lic_type][lic_name] < lic_end_date:
                             result['lics'][lic_type][lic_name] = lic_end_date
+
         except Exception as err:
             if self.raise_exceptions:
-                raise ProcessingError(err)
-            return result
+                raise ProcessingError(err, org_code=org_code)
 
         result['status'] = 1
+
         return result
-
-
-
-a = Scraper()
-# a.find_one('38345394')
-r = a.find_bulk(['38345394', '12345678', 'x2343'])
-print(r)
