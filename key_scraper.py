@@ -79,7 +79,7 @@ class Scraper(BaseScraper):
             if isinstance(item, Exception):
                 self.logger.error(item)
                 firm_code_group = re.search(pattern_exc_firm_code, str(item))
-                if firm_code_group.group():
+                if firm_code_group:
                     data = {'org_code': firm_code_group.group(1), 'status': -1}
                     results.append(data)
             else:
@@ -164,7 +164,5 @@ class Scraper(BaseScraper):
         result['status'] = 1
 
         return result
-
-
 
 

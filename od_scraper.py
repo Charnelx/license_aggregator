@@ -109,14 +109,15 @@ class Scraper(BaseScraper):
             result['firm_location'] = firm_data['location']
             result['firm_status'] = firm_data['status']
             result['firm_activities'] = firm_data['activities']
-            result['firm_beneficiaries'] = firm_data['beneficiaries']
+            result['firm_beneficiaries'] = firm_data['beneficiaries'] if firm_data.get('beneficiaries') else ''
 
             result['firm_vat'] = 0
             result['firm_vat_code'] = ''
             for item in firm_data['warnings']:
                 if item['type'] == 'pdv':
-                    result['firm_vat'] = 1
-                    result['firm_vat_code'] = item['number']
+                    if not item.get('date_cancellation'):
+                        result['firm_vat'] = 1
+                        result['firm_vat_code'] = item['number']
 
         except Exception as err:
             if self.raise_exceptions:
@@ -125,3 +126,7 @@ class Scraper(BaseScraper):
         result['status'] = 1
 
         return result
+
+from pprint import pprint
+a = Scraper()
+pprint(a.find_one('38345394'))
