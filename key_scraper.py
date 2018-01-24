@@ -6,6 +6,7 @@ import json
 import time
 import logging
 import re
+from lxml import html
 
 from scraper_base import *
 from session import GSession
@@ -15,18 +16,20 @@ TSession = NewType('Session', object)
 
 class Scraper(BaseScraper):
 
-    ENTRY_URL = 'http://uakey.com.ua/ua/setificate-one-office/text=3&page=1?lang=ukr#blocy'
-    REQUEST_URL = 'http://uakey.com.ua/inc/sertificate_from_edrpo.php'
+    ENTRY_URL = 'https://uakey.com.ua/ua/setificate-one-office/text=3&page=1'
+    REQUEST_URL = 'https://uakey.com.ua/inc/sertificate_from_edrpo.php'
 
     HEADERS = {
             'Accept': '*/*',
             'Accept-Encoding': 'gzip, deflate',
             'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.6,en;q=0.4',
             'Connection': 'keep-alive',
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': 'application/x-www-form-urlencoded',
             'Host': 'uakey.com.ua',
-            'Origin': 'http://uakey.com.ua',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3013.3 Safari/537.36',
+            'Origin': 'https://uakey.com.ua',
+            'Referer': 'https://uakey.com.ua/ua/setificate-one-office/text=3&page=1?lang=ukr',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko)'
+                          ' Chrome/63.0.3239.132 Safari/537.36 OPR/50.0.2762.67',
     }
 
     def __init__(self, coros_limit=100, r_timeout=5, raise_exceptions=True):
@@ -34,6 +37,8 @@ class Scraper(BaseScraper):
         self.coros_limit = coros_limit
         self.raise_exceptions = raise_exceptions
         self.logger = logging.getLogger('key_scraper')
+
+        self.id = 'keys_scraper'
 
     def find_one(self, org_code: str) -> dict:
         code_length = len(org_code)
@@ -43,16 +48,14 @@ class Scraper(BaseScraper):
         session = requests.Session()
         session.headers = self.HEADERS
 
-        # Preparations to retrieve SSID
-        session.post(self.ENTRY_URL, data={'ORGEDRPOUNUMBER': org_code})
-        ssid = session.cookies['PHPSESSID']
-        epoch_time = int(time.time())
-
-        # Retrieve keys info
-        req_params = {'PHPSESSID': ssid, 'JsHttpRequest': '{}{}'.format(epoch_time, '0-xml')}
-        req_data = {'SertEdrpo': org_code}
-
-        resp = session.post(self.REQUEST_URL, params=req_params, data=req_data)
+        # Retrieve page with keys JSON data
+        data = {
+            'SUBJECTORGNAME': '',
+            'SERIALNUMBER': '',
+            'ORGEDRPOUNUMBER': org_code,
+            'search': 'пошук',
+        }
+        resp = session.post(self.ENTRY_URL, params={'lang':'ukr'}, data=data)
 
         if resp.status_code == 200:
             data = resp.text
@@ -96,29 +99,25 @@ class Scraper(BaseScraper):
 
         tasks, result = [], []
 
-        ssid = await self._get_ssid(session, '123456789199')
-
         for code in org_codes:
-            tasks.append(self._get_data(code, ssid, session, semaphore))
+            tasks.append(self._get_data(code, session, semaphore))
 
         result = await asyncio.gather(*tasks, return_exceptions=True)
 
         session.close()
         return result
 
-    async def _get_ssid(self, session: TSession, org_code: str) -> str:
-        response = await session.post(self.ENTRY_URL, data={'ORGEDRPOUNUMBER': org_code})
-        ssid = response.cookies.get('PHPSESSID')
-        return ssid.value
-
-    async def _get_data(self, org_code: str, ssid: str, session: TSession, semaphore):
-        epoch_time = int(time.time())
-        req_params = {'PHPSESSID': ssid, 'JsHttpRequest': '{}{}'.format(epoch_time, '0-xml')}
-        req_data = {'SertEdrpo': org_code}
+    async def _get_data(self, org_code: str, session: TSession, semaphore):
 
         try:
-            response = await session.post(self.REQUEST_URL, params=req_params, data=req_data, semaphore=semaphore,
-                                          timeout=self.r_timeout)
+            data = {
+                'SUBJECTORGNAME': '',
+                'SERIALNUMBER': '',
+                'ORGEDRPOUNUMBER': org_code,
+                'search': 'пошук',
+            }
+
+            response = await session.post(self.ENTRY_URL, params={'lang':'ukr'}, data=data)
         except Exception as err:
             raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.REQUEST_URL, err), org_code=org_code)
 
@@ -132,27 +131,34 @@ class Scraper(BaseScraper):
         result = {'status': -1}
 
         try:
-            data = json.loads(data)
+            root = html.fromstring(data)
+            script_node = root.xpath('//td[@class="str_4_3"]/script')[1]
+            data = script_node.text.split('=', maxsplit=1)[1].lstrip().replace("'", "")[:-1]
         except:
             return result
 
-        if not data or data['js']['id'][0] == '':
+        try:
+            data = json.loads(data)
+        except Exception as err:
+            return result
+
+        if not data or data[org_code]['id'][0] == '':
             result['status'] = 0
             return result
 
         try:
-            items_q = len(data['js']['id'])
+            items_q = len(data[org_code]['id'])
             certs = []
             for idx in range(items_q):
-                date_start = data['js']['start_date'][idx]
-                date_end = data['js']['end_date'][idx]
+                date_start = data[org_code]['start'][idx]
+                date_end = data[org_code]['end'][idx]
 
                 certs.append({
-                    'owner': data['js']['text'][idx].replace('&quot;', '"'),
-                    'id': data['js']['id'][idx],
+                    'owner': data[org_code]['text'][idx].replace('&quot;', '"'),
+                    'id': data[org_code]['id'][idx],
                     'date_start': datetime.datetime.strptime(date_start, '%d.%m.%y'),
                     'date_end': datetime.datetime.strptime(date_end, '%d.%m.%y'),
-                    'crypt_status': data['js']['FORCRYPT'][idx]
+                    'crypt_status': data[org_code]['forcript'][idx]
                 })
 
             result['certs'] = certs
@@ -164,5 +170,3 @@ class Scraper(BaseScraper):
         result['status'] = 1
 
         return result
-
-
