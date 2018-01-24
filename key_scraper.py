@@ -8,8 +8,8 @@ import logging
 import re
 from lxml import html
 
-from scraper_base import *
-from session import GSession
+from .scraper_base import *
+from .session import GSession
 
 TSession = NewType('Session', object)
 
@@ -80,11 +80,13 @@ class Scraper(BaseScraper):
         for item in results_raw:
             # hack to obtain org_code from failed request
             if isinstance(item, Exception):
-                self.logger.error(item)
                 firm_code_group = re.search(pattern_exc_firm_code, str(item))
                 if firm_code_group:
                     data = {'org_code': firm_code_group.group(1), 'status': -1}
                     results.append(data)
+                    self.logger.error('Error with code - {}', data['org_code'])
+                else:
+                    self.logger.error('Error with unknown org_code')
             else:
                 for org_code, data_raw in item.items():
                     data = self._process(data_raw, org_code)
@@ -141,8 +143,7 @@ class Scraper(BaseScraper):
             data = json.loads(data)
         except Exception as err:
             return result
-
-        if not data or data[org_code]['id'][0] == '':
+        if not data or len(data[org_code]['id']) == 0:
             result['status'] = 0
             return result
 
