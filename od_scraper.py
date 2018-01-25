@@ -5,8 +5,8 @@ import json
 import re
 import logging
 
-from scraper_base import *
-from session import GSession
+from .scraper_base import *
+from .session import GSession
 
 
 class Scraper(BaseScraper):
@@ -19,6 +19,8 @@ class Scraper(BaseScraper):
         self.coros_limit = coros_limit
         self.raise_exceptions = raise_exceptions
         self.logger = logging.getLogger('od_scraper')
+
+        self.id = 'od_scraper'
 
     def find_one(self, org_code: str):
         code_length = len(org_code)
@@ -103,13 +105,21 @@ class Scraper(BaseScraper):
 
         try:
             firm_data = data['companies'][0]
-            result['firm_name'] = firm_data['full_name']
-            result['firm_name_short'] = firm_data['short_name']
+            result['firm_reg_date'] = ''
+            if firm_data.get('edr'):
+                result['firm_reg_date'] = firm_data['edr']['registration']['date']
+            result['firm_name'] = firm_data['full_name'] \
+                if firm_data.get('full_name') else 'Название не определено'
+            result['firm_name_short'] = firm_data['short_name'] \
+                if firm_data.get('short_name') else 'Название не определено'
             result['firm_ceo'] = firm_data['ceo_name']
             result['firm_location'] = firm_data['location']
-            result['firm_status'] = firm_data['status']
-            result['firm_activities'] = firm_data['activities']
-            result['firm_beneficiaries'] = firm_data['beneficiaries'] if firm_data.get('beneficiaries') else ''
+            result['firm_status'] = firm_data['status'] \
+                if firm_data.get('firm_status') else 'Не определено'
+            result['firm_activities'] = firm_data['activities'] \
+                if firm_data.get('firm_status') else ''
+            result['firm_beneficiaries'] = firm_data['beneficiaries'] \
+                if firm_data.get('beneficiaries') else ''
 
             result['firm_vat'] = 0
             result['firm_vat_code'] = ''
@@ -127,6 +137,3 @@ class Scraper(BaseScraper):
 
         return result
 
-from pprint import pprint
-a = Scraper()
-pprint(a.find_one('38345394'))
