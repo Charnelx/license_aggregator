@@ -7,8 +7,8 @@ import re
 import requests
 from typing import Iterable
 
-from scraper_base import *
-from session import GSession
+from .scraper_base import *
+from .session import GSession
 
 
 class Scraper(BaseScraper):
@@ -23,6 +23,8 @@ class Scraper(BaseScraper):
         self.coros_limit = coros_limit
         self.raise_exceptions = raise_exceptions
         self.logger = logging.getLogger('medoc_scraper')
+
+        self.id = 'medoc_scraper'
 
     def find_one(self, org_code: str):
         code_length = len(org_code)
@@ -58,7 +60,7 @@ class Scraper(BaseScraper):
             if isinstance(item, Exception):
                 self.logger.error(item)
                 firm_code_group = re.search(pattern_exc_firm_code, str(item))
-                if firm_code_group.group():
+                if firm_code_group:
                     data = {'org_code': firm_code_group.group(1), 'status': -1}
                     results.append(data)
             else:
@@ -131,3 +133,4 @@ class Scraper(BaseScraper):
         result['status'] = 1
 
         return result
+
