@@ -110,8 +110,11 @@ class Scraper(BaseScraper):
                 result['firm_reg_date'] = firm_data['edr']['registration']['date']
             result['firm_name'] = firm_data['full_name'] \
                 if firm_data.get('full_name') else 'Название не определено'
-            result['firm_name_short'] = firm_data['short_name'] \
-                if firm_data.get('short_name') else 'Название не определено'
+            if not firm_data.get('short_name') and not firm_data.get('full_name'):
+                result['firm_name_short'] = 'Название не определено'
+            else:
+                result['firm_name_short'] = firm_data['short_name'] \
+                if firm_data.get('short_name') else firm_data.get('full_name')
             result['firm_ceo'] = firm_data['ceo_name']
             result['firm_location'] = firm_data['location']
             result['firm_status'] = firm_data['status'] \
