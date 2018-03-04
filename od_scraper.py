@@ -114,13 +114,13 @@ class Scraper(BaseScraper):
                 result['firm_name_short'] = 'Название не определено'
             else:
                 result['firm_name_short'] = firm_data['short_name'] \
-                if firm_data.get('short_name') else firm_data.get('full_name')
+                    if firm_data.get('short_name') else firm_data.get('full_name')
             result['firm_ceo'] = firm_data['ceo_name']
             result['firm_location'] = firm_data['location']
             result['firm_status'] = firm_data['status'] \
-                if firm_data.get('firm_status') else 'Не определено'
+                if firm_data.get('status') else 'Не определено'
             result['firm_activities'] = firm_data['activities'] \
-                if firm_data.get('firm_status') else ''
+                if firm_data.get('activities') else ''
             result['firm_beneficiaries'] = firm_data['beneficiaries'] \
                 if firm_data.get('beneficiaries') else ''
 

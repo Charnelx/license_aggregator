@@ -133,4 +133,3 @@ class Scraper(BaseScraper):
         result['status'] = 1
 
         return result
-
