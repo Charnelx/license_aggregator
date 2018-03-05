@@ -86,15 +86,18 @@ class Scraper(BaseScraper):
         return result
 
     async def _get_data(self, org_code, session, semaphore):
-        data = {org_code: []}
+        data = {org_code: None}
         req_params = {'edrpo': org_code, 'type': 'json'}
+
 
         try:
             response = await session.get(self.BASE_URL, params=req_params, semaphore=semaphore, timeout=self.r_timeout)
         except Exception as err:
-            raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.BASE_URL, err), org_code=org_code)
+            # Some asyncio bug: this exception would not be raised but at the same time it's catched by debugger
+            # raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.BASE_URL, err), org_code=org_code)
+            return data
 
-        if response.content:
+        if response and response.content:
             data_raw = json.loads(response.content)
             data = {org_code: data_raw}
         return data

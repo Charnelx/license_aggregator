@@ -84,7 +84,7 @@ class Scraper(BaseScraper):
                 if firm_code_group:
                     data = {'org_code': firm_code_group.group(1), 'status': -1}
                     results.append(data)
-                    self.logger.error('Error with code - {}', data['org_code'])
+                    self.logger.error('Error with code - {}'.format(data['org_code']))
                 else:
                     self.logger.error('Error with unknown org_code')
             else:
@@ -111,38 +111,43 @@ class Scraper(BaseScraper):
 
     async def _get_data(self, org_code: str, session: TSession, semaphore):
 
+        data = {org_code: None}
+
         try:
-            data = {
+            req_data = {
                 'SUBJECTORGNAME': '',
                 'SERIALNUMBER': '',
                 'ORGEDRPOUNUMBER': org_code,
                 'search': 'пошук',
             }
 
-            response = await session.post(self.ENTRY_URL, params={'lang':'ukr'}, data=data)
+            response = await session.post(self.ENTRY_URL, params={'lang': 'ukr'}, data=req_data)
         except Exception as err:
-            raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.REQUEST_URL, err), org_code=org_code)
+            # Some asyncio bug: this exception would not be raised but at the same time it's catched by debugger
+            # raise ResponseError(' -> Request on {} failed. Error: {}'.format(self.REQUEST_URL, err), org_code=org_code)
+            return data
 
-        if response.content:
-            data_raw = response.content
-            data = {org_code: data_raw}
+        if response and response.content:
+                data_raw = response.content
+                data = {org_code: data_raw}
         return data
 
     def _process(self, data, org_code=None):
 
-        result = {'status': -1}
+        result = {'status': -1, 'org_code': org_code if org_code else '99999999'}
 
         try:
             root = html.fromstring(data)
             script_node = root.xpath('//td[@class="str_4_3"]/script')[1]
             data = script_node.text.split('=', maxsplit=1)[1].lstrip().replace("'", "")[:-1]
-        except:
+        except Exception as err:
             return result
 
         try:
             data = json.loads(data)
         except Exception as err:
             return result
+
         if not data or len(data[org_code]['id']) == 0:
             result['status'] = 0
             return result

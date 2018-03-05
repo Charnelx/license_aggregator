@@ -51,6 +51,7 @@ class GSession(aiohttp.ClientSession):
                 return response
         except asyncio.TimeoutError:
             self.logger.error('timeout error for url: {}'.format(url))
+            return None
         finally:
             if semaphore:
                 semaphore.release()
